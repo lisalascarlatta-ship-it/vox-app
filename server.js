@@ -7,8 +7,8 @@ const app = express();
 app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
 // --- Helper: strip accidental code fences and parse JSON safely ---
 function safeParseModelJson(text) {
@@ -16,7 +16,6 @@ function safeParseModelJson(text) {
   try {
     return JSON.parse(cleaned);
   } catch (e) {
-    // Fallback: treat the raw text as a single message bubble
     return {
       bubbles: [{ type: 'text', content: cleaned || '...' }],
       relationship_delta: 0,
@@ -25,56 +24,48 @@ function safeParseModelJson(text) {
   }
 }
 
-// --- POST /api/chat ---
-// body: { messages: [{role:'user'|'assistant', content:string}], relationship: {level:number}, memory: string[] }
 app.post('/api/chat', async (req, res) => {
   try {
-    if (!ANTHROPIC_API_KEY) {
+    if (!GEMINI_API_KEY) {
       return res.status(500).json({
-        error: 'ANTHROPIC_API_KEY non configurata sul server. Vedi il file .env.example.',
+        error: 'GEMINI_API_KEY non configurata sul server. Vedi il file .env.example.',
       });
     }
 
     const { messages = [], relationship = { level: 0 }, memory = [] } = req.body;
-
     const system = buildSystemPrompt(relationship, memory);
 
-    // Keep only the last 24 turns to control context size
     const trimmed = messages.slice(-24).map((m) => ({
-      role: m.role === 'assistant' ? 'assistant' : 'user',
-      content: m.content,
+      role: m.role === 'assistant' || m.role === 'vox' ? 'model' : 'user',
+      parts: [{ text: m.content }],
     }));
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
+        'x-goog-api-key': GEMINI_API_KEY,
       },
       body: JSON.stringify({
-        model: ANTHROPIC_MODEL,
-        max_tokens: 700,
-        system,
-        messages: trimmed,
+        system_instruction: { parts: [{ text: system }] },
+        contents: trimmed,
+        generationConfig: { maxOutputTokens: 700 },
       }),
     });
 
     if (!response.ok) {
       const errText = await response.text();
-      console.error('Anthropic API error:', errText);
+      console.error('Gemini API error:', errText);
       return res.status(502).json({ error: 'Errore nella chiamata al modello AI.' });
     }
 
     const data = await response.json();
-    const rawText = (data.content || [])
-      .filter((b) => b.type === 'text')
-      .map((b) => b.text)
-      .join('\n');
+    const rawText = data.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('\n') || '';
 
     const parsed = safeParseModelJson(rawText);
 
-    // Basic shape safety
     if (!Array.isArray(parsed.bubbles) || parsed.bubbles.length === 0) {
       parsed.bubbles = [{ type: 'text', content: rawText || '...' }];
     }
@@ -88,12 +79,6 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-// --- POST /api/image ---
-// Stub pronto per un provider di image generation a scelta.
-// Se non è configurata nessuna chiave, risponde con placeholder=true
-// così il frontend puo' mostrare un fumetto "immagine non disponibile"
-// invece di rompersi. Collega qui la tua API preferita (es. OpenAI Images,
-// Stability, ecc.) quando vorrai attivarla davvero.
 app.post('/api/image', async (req, res) => {
   const { prompt } = req.body;
   const IMAGE_API_KEY = process.env.IMAGE_API_KEY;
@@ -101,15 +86,6 @@ app.post('/api/image', async (req, res) => {
   if (!IMAGE_API_KEY) {
     return res.json({ placeholder: true, prompt });
   }
-
-  // --- Esempio di integrazione (da adattare al provider scelto) ---
-  // const r = await fetch('https://api.tuoprovider.com/images', {
-  //   method: 'POST',
-  //   headers: { Authorization: `Bearer ${IMAGE_API_KEY}` },
-  //   body: JSON.stringify({ prompt }),
-  // });
-  // const data = await r.json();
-  // return res.json({ placeholder: false, url: data.url });
 
   return res.json({ placeholder: true, prompt });
 });
