@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Vox</title>
+<meta name="theme-color" content="#0E1013" />
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icons/icon-192.png" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ===== SCHERMATA: LISTA CHAT ===== -->
+  <section id="view-list" class="view">
+    <header class="list-header">
+      <h1 class="wordmark">Vox</h1>
+      <button id="btn-new-chat" class="btn-icon" title="Nuova chat" aria-label="Nuova chat">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </header>
+    <div id="chat-list" class="chat-list"></div>
+    <div id="empty-state" class="empty-state hidden">
+      <div class="empty-mark">V</div>
+      <p>Nessuna conversazione ancora.</p>
+      <p class="empty-sub">Tocca + per iniziare a parlare con Vox.</p>
+    </div>
+  </section>
+
+  <!-- ===== SCHERMATA: CONVERSAZIONE ===== -->
+  <section id="view-chat" class="view hidden">
+    <header class="chat-header">
+      <button id="btn-back" class="btn-icon" aria-label="Indietro">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <div class="avatar" id="chat-avatar">V</div>
+      <div class="chat-title-block">
+        <div id="chat-title" class="chat-title">Vox</div>
+        <div id="chat-status" class="chat-status">in linea</div>
+      </div>
+      <button id="btn-menu" class="btn-icon" aria-label="Impostazioni conversazione">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="5" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="19" r="1.6" fill="currentColor"/></svg>
+      </button>
+    </header>
+
+    <div id="messages" class="messages"></div>
+
+    <div id="typing-row" class="typing-row hidden">
+      <div class="wave"><span></span><span></span><span></span><span></span></div>
+      <span class="typing-label">Vox sta scrivendo…</span>
+    </div>
+
+    <form id="composer" class="composer">
+      <button type="button" id="btn-attach" class="btn-icon" title="Allega immagine" aria-label="Allega immagine">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" stroke-width="2"/><circle cx="8.5" cy="10" r="1.5" fill="currentColor"/><path d="M21 16l-5-5-4 4-2-2-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <input id="input-text" type="text" placeholder="Scrivi un messaggio" autocomplete="off" />
+      <button type="submit" id="btn-send" class="btn-send" aria-label="Invia">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 20l16-8L4 4v6l10 2-10 2v6z" fill="currentColor"/></svg>
+      </button>
+    </form>
+  </section>
+
+</div>
+
+<!-- ===== MENU CONVERSAZIONE (bottom sheet) ===== -->
+<div id="sheet-overlay" class="sheet-overlay hidden">
+  <div class="sheet">
+    <button class="sheet-item" data-action="rename">Rinomina conversazione</button>
+    <button class="sheet-item" data-action="duplicate">Duplica conversazione</button>
+    <button class="sheet-item" data-action="export">Esporta conversazione (.json)</button>
+    <button class="sheet-item danger" data-action="delete">Elimina conversazione</button>
+    <button class="sheet-item" data-action="cancel">Annulla</button>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
