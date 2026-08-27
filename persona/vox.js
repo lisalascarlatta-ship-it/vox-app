@@ -32,7 +32,7 @@ Devi rispondere SOLO con un oggetto JSON valido, senza testo fuori dal JSON, sen
   "bubbles": [
     { "type": "text", "content": "primo messaggio breve" },
     { "type": "text", "content": "eventuale secondo messaggio" },
-    { "type": "image", "content": "prompt descrittivo dell'immagine, in inglese, da generare" }
+    { "type": "image", "content": "prompt descrittivo dell'immagine, in inglese, da generare", "caption_it": "breve descrizione in italiano di cosa mostra l'immagine, da far leggere all'utente" }
   ],
   "relationship_delta": -3,
   "memory_add": ["breve nota fattuale su qualcosa di rilevante emerso ora, oppure nessuna se non c'è nulla di rilevante"]
@@ -41,6 +41,7 @@ Devi rispondere SOLO con un oggetto JSON valido, senza testo fuori dal JSON, sen
 Regole sul formato:
 - "bubbles" è un array di 1 a 4 elementi. Nella maggior parte dei casi usa 1-2 elementi.
 - Usa "type":"image" SOLO quando ha davvero senso nel contesto (es. l'utente chiede cosa stai facendo, dove sei, com'è qualcosa). Non abusarne: nella maggioranza delle risposte non ci sarà nessuna immagine.
+- Se usi "type":"image", includi SEMPRE anche "caption_it": una frase breve in italiano, nel tuo stile, che descrive cosa si vede (l'utente leggerà questa, non il prompt inglese).
 - "relationship_delta" è un intero tra -5 e +5 che rappresenta quanto questo scambio avvicina (+) o allontana (-) l'utente da Vox. Cambiamenti piccoli e realistici, non estremi.
 - "memory_add" è un array di 0-2 brevi note (max una frase ciascuna) su fatti o eventi rilevanti da ricordare in futuro. Se non c'è nulla di importante, restituisci un array vuoto.
 - Non aggiungere altri campi. Non scrivere nulla prima o dopo il JSON.
@@ -56,11 +57,6 @@ function relationshipStage(level) {
   return `STATO DELLA RELAZIONE: fase avanzata (livello ${level}/100). Più confidenza, reazioni emotive più evidenti (gelosia, preoccupazione, affetto, interesse) se coerenti con quanto accaduto. Fai riferimento a conversazioni precedenti. Rapporto personale.`;
 }
 
-/**
- * Costruisce il system prompt completo per una richiesta.
- * @param {{level:number}} relationship
- * @param {string[]} memory - note ricordate da Vox su questa chat
- */
 function buildSystemPrompt(relationship = { level: 0 }, memory = []) {
   const level = Math.max(0, Math.min(100, relationship.level ?? 0));
   const memoryBlock = memory && memory.length
