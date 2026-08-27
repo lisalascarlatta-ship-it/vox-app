@@ -207,7 +207,7 @@ function lastUserMessage() {
   return null;
 }
 
-async function requestVoxReply() {
+async function requestVoxReply(retryCount = 0) {
   const chat = getChat();
   typingRow.classList.remove('hidden');
   scrollToBottom();
@@ -241,8 +241,20 @@ async function requestVoxReply() {
   updateMessageStatus(lastUserMessage(), 'delivered');
 
   if (res.status === 429 && data.error === 'rate_limit') {
-    const seconds = data.retryAfterSeconds || 20;
+  if (res.status === 429 && data.error === 'rate_limit') {
     typingRow.classList.add('hidden');
+
+    if (retryCount >= 2) {
+      appendMessage({
+        role: 'vox',
+        type: 'wait',
+        content: 'Vox è irraggiungibile per il momento: è stato superato il limite di richieste del piano gratuito. Aspetta circa un minuto e riprova a scrivergli.',
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    const seconds = data.retryAfterSeconds || 20;
     appendMessage({
       role: 'vox',
       type: 'wait',
@@ -250,7 +262,7 @@ async function requestVoxReply() {
       timestamp: Date.now(),
     });
     await delay(seconds * 1000 + 800);
-    await requestVoxReply();
+    await requestVoxReply(retryCount + 1);
     return;
   }
 
