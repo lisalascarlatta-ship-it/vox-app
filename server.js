@@ -72,6 +72,25 @@ app.post('/api/chat', async (req, res) => {
     if (!response.ok) {
       const errText = await response.text();
       console.error('Gemini API error:', errText);
+
+      let retrySeconds = null;
+      try {
+        const errJson = JSON.parse(errText);
+        const errObj = errJson.error || errJson;
+        if (errObj.code === 429 || errObj.status === 'RESOURCE_EXHAUSTED') {
+          const retryInfo = (errObj.details || []).find(
+            (d) => (d['@type'] || '').includes('RetryInfo')
+          );
+          const parsedDelay = retryInfo && parseInt(retryInfo.retryDelay, 10);
+          retrySeconds = Number.isFinite(parsedDelay) && parsedDelay > 0 ? parsedDelay : 20;
+        }
+      } catch {
+        // errText non era JSON valido, ignoriamo e trattiamo come errore generico
+      }
+
+      if (retrySeconds) {
+        return res.status(429).json({ error: 'rate_limit', retryAfterSeconds: retrySeconds });
+      }
       return res.status(502).json({ error: 'Errore nella chiamata al modello AI.' });
     }
 
