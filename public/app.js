@@ -241,7 +241,6 @@ async function requestVoxReply(retryCount = 0) {
   updateMessageStatus(lastUserMessage(), 'delivered');
 
   if (res.status === 429 && data.error === 'rate_limit') {
-  if (res.status === 429 && data.error === 'rate_limit') {
     typingRow.classList.add('hidden');
 
     if (retryCount >= 2) {
@@ -366,4 +365,4 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   });
-      }
+}
