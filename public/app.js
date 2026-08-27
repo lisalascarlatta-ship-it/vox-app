@@ -118,6 +118,8 @@ function renderMessages() {
 function renderBubble(m) {
   const wrap = document.createElement('div');
   wrap.className = `bubble-row ${m.role}`;
+  const col = document.createElement('div');
+  col.className = 'bubble-col';
   const bubble = document.createElement('div');
 
   if (m.type === 'image') {
@@ -128,11 +130,23 @@ function renderBubble(m) {
       bubble.className = `bubble ${m.role} image-placeholder`;
       bubble.textContent = `📷 ${m.caption_it || 'Vox ha condiviso un\'immagine (generazione non ancora attiva).'}`;
     }
+  } else if (m.type === 'wait') {
+    bubble.className = `bubble ${m.role} wait`;
+    bubble.textContent = m.content;
   } else {
     bubble.className = `bubble ${m.role}`;
     bubble.textContent = m.content;
   }
-  wrap.appendChild(bubble);
+  col.appendChild(bubble);
+
+  if (m.role === 'user') {
+    const status = document.createElement('div');
+    status.className = `msg-status ${m.status || 'sent'}`;
+    status.textContent = m.status === 'sent' || !m.status ? '✓' : '✓✓';
+    col.appendChild(status);
+  }
+
+  wrap.appendChild(col);
   return wrap;
 }
 
@@ -143,6 +157,14 @@ function appendMessage(msg) {
   saveChats(chats);
   messagesEl.appendChild(renderBubble(msg));
   scrollToBottom();
+  return msg;
+}
+
+function updateMessageStatus(msg, status) {
+  if (!msg || msg.status === status) return;
+  msg.status = status;
+  saveChats(chats);
+  renderMessages();
 }
 
 function scrollToBottom() {
@@ -165,7 +187,7 @@ async function onSend(e) {
   if (!text) return;
   inputText.value = '';
 
-  appendMessage({ role: 'user', type: 'text', content: text, timestamp: Date.now() });
+  appendMessage({ role: 'user', type: 'text', content: text, status: 'sent', timestamp: Date.now() });
 
   const chat = getChat();
   if (chat.messages.length === 1) {
@@ -177,18 +199,27 @@ async function onSend(e) {
   await requestVoxReply();
 }
 
+function lastUserMessage() {
+  const chat = getChat();
+  for (let i = chat.messages.length - 1; i >= 0; i--) {
+    if (chat.messages[i].role === 'user') return chat.messages[i];
+  }
+  return null;
+}
+
 async function requestVoxReply() {
   const chat = getChat();
   typingRow.classList.remove('hidden');
   scrollToBottom();
 
-  let data;
+  let res, data;
   try {
-    const res = await fetch('/api/chat', {
+    res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         messages: chat.messages
+          .filter((m) => m.type !== 'wait')
           .filter((m) => m.type !== 'image' || m.role === 'user')
           .map((m) => ({ role: m.role, content: m.content })),
         relationship: chat.relationship,
@@ -196,7 +227,6 @@ async function requestVoxReply() {
       }),
     });
     data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Errore sconosciuto');
   } catch (err) {
     typingRow.classList.add('hidden');
     appendMessage({
@@ -207,6 +237,35 @@ async function requestVoxReply() {
     });
     return;
   }
+
+  updateMessageStatus(lastUserMessage(), 'delivered');
+
+  if (res.status === 429 && data.error === 'rate_limit') {
+    const seconds = data.retryAfterSeconds || 20;
+    typingRow.classList.add('hidden');
+    appendMessage({
+      role: 'vox',
+      type: 'wait',
+      content: `Vox è impegnato al momento. Ti risponderà tra circa ${seconds} secondi…`,
+      timestamp: Date.now(),
+    });
+    await delay(seconds * 1000 + 800);
+    await requestVoxReply();
+    return;
+  }
+
+  if (!res.ok) {
+    typingRow.classList.add('hidden');
+    appendMessage({
+      role: 'vox',
+      type: 'system',
+      content: `⚠️ ${data.error || 'Errore sconosciuto'}`,
+      timestamp: Date.now(),
+    });
+    return;
+  }
+
+  updateMessageStatus(lastUserMessage(), 'read');
 
   chat.relationship.level = Math.max(0, Math.min(100, chat.relationship.level + (data.relationship_delta || 0)));
   if (data.memory_add && data.memory_add.length) {
@@ -295,4 +354,4 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   });
-}
+      }
