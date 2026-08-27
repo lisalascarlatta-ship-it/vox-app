@@ -1,7 +1,3 @@
-// ===== Persistenza locale (localStorage) =====
-// Struttura pensata per poter essere sostituita in futuro da un vero
-// database, senza cambiare il resto dell'app: basta riscrivere queste
-// funzioni per parlare con un'API invece che con localStorage.
 const STORE_KEY = 'vox_chats_v1';
 
 function loadChats() {
@@ -21,7 +17,6 @@ function uid() {
 let chats = loadChats();
 let activeChatId = null;
 
-// ===== Elementi DOM =====
 const viewList = document.getElementById('view-list');
 const viewChat = document.getElementById('view-chat');
 const chatListEl = document.getElementById('chat-list');
@@ -44,14 +39,12 @@ sheetOverlay.querySelectorAll('.sheet-item').forEach((btn) => {
   btn.addEventListener('click', () => handleSheetAction(btn.dataset.action));
 });
 
-// ===== Navigazione =====
 function showView(name) {
   viewList.classList.toggle('hidden', name !== 'list');
   viewChat.classList.toggle('hidden', name !== 'chat');
   if (name === 'list') renderChatList();
 }
 
-// ===== Lista chat =====
 function renderChatList() {
   chats = loadChats();
   chatListEl.innerHTML = '';
@@ -115,7 +108,6 @@ function updateStatusLabel() {
   chatStatusEl.textContent = level > 55 ? 'online · vi conoscete bene' : level > 20 ? 'online' : 'online';
 }
 
-// ===== Messaggi =====
 function renderMessages() {
   const chat = getChat();
   messagesEl.innerHTML = '';
@@ -134,7 +126,7 @@ function renderBubble(m) {
       bubble.innerHTML = `<img src="${m.url}" alt="immagine">`;
     } else {
       bubble.className = `bubble ${m.role} image-placeholder`;
-      bubble.textContent = `📷 ${m.content || 'immagine non disponibile (nessuna API di generazione immagini configurata)'}`;
+      bubble.textContent = `📷 ${m.caption_it || 'Vox ha condiviso un\'immagine (generazione non ancora attiva).'}`;
     }
   } else {
     bubble.className = `bubble ${m.role}`;
@@ -167,7 +159,6 @@ function escapeHtml(s) {
   return d.innerHTML;
 }
 
-// ===== Invio messaggio e risposta di Vox =====
 async function onSend(e) {
   e.preventDefault();
   const text = inputText.value.trim();
@@ -177,7 +168,6 @@ async function onSend(e) {
   appendMessage({ role: 'user', type: 'text', content: text, timestamp: Date.now() });
 
   const chat = getChat();
-  // Se e' il primo messaggio, usalo per proporre un titolo automatico
   if (chat.messages.length === 1) {
     chat.title = text.length > 28 ? text.slice(0, 28) + '…' : text;
     chatTitleEl.textContent = chat.title;
@@ -212,27 +202,24 @@ async function requestVoxReply() {
     appendMessage({
       role: 'vox',
       type: 'system',
-      content: `⚠️ Non riesco a raggiungere il backend (${err.message}). Controlla che il server sia avviato e che ANTHROPIC_API_KEY sia configurata.`,
+      content: `⚠️ Non riesco a raggiungere il backend (${err.message}).`,
       timestamp: Date.now(),
     });
-    renderSystemNote();
     return;
   }
 
-  // aggiorna relazione e memoria
   chat.relationship.level = Math.max(0, Math.min(100, chat.relationship.level + (data.relationship_delta || 0)));
   if (data.memory_add && data.memory_add.length) {
     chat.memory.push(...data.memory_add.filter(Boolean));
-    chat.memory = chat.memory.slice(-30); // evita crescita infinita
+    chat.memory = chat.memory.slice(-30);
   }
   saveChats(chats);
   updateStatusLabel();
 
-  // mostra i bubble in sequenza, con un piccolo ritardo realistico
   for (const bubble of data.bubbles) {
     await delay(typingDelayFor(bubble.content));
     if (bubble.type === 'image') {
-      await handleImageBubble(bubble.content);
+      await handleImageBubble(bubble);
     } else {
       appendMessage({ role: 'vox', type: 'text', content: bubble.content, timestamp: Date.now() });
     }
@@ -241,13 +228,13 @@ async function requestVoxReply() {
   typingRow.classList.add('hidden');
 }
 
-async function handleImageBubble(prompt) {
-  appendMessage({ role: 'vox', type: 'image', content: prompt, url: null, timestamp: Date.now() });
+async function handleImageBubble(bubble) {
+  appendMessage({ role: 'vox', type: 'image', content: bubble.content, caption_it: bubble.caption_it, url: null, timestamp: Date.now() });
   try {
     const res = await fetch('/api/image', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt }),
+      body: JSON.stringify({ prompt: bubble.content }),
     });
     const data = await res.json();
     if (data.url) {
@@ -269,9 +256,6 @@ function typingDelayFor(text) {
 }
 function delay(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
-function renderSystemNote() {} // hook riservato per future notifiche UI
-
-// ===== Menu conversazione (bottom sheet) =====
 function handleSheetAction(action) {
   sheetOverlay.classList.add('hidden');
   const chat = getChat();
@@ -304,13 +288,11 @@ function handleSheetAction(action) {
   }
 }
 
-// ===== Avvio =====
 renderChatList();
 showView('list');
 
-// ===== PWA: registrazione service worker =====
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   });
-        }
+}
