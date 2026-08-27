@@ -65,7 +65,6 @@ app.post('/api/chat', async (req, res) => {
         generationConfig: {
           maxOutputTokens: 1536,
           responseMimeType: 'application/json',
-          thinkingConfig: { thinkingBudget: 0 },
         },
       }),
     });
