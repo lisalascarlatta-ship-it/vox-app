@@ -8,16 +8,27 @@ app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
 
-// --- Helper: strip accidental code fences and parse JSON safely ---
+function extractBubblesFallback(text) {
+  const bubbles = [];
+  const regex = /"type"\s*:\s*"(text|image)"\s*,\s*"content"\s*:\s*"((?:[^"\\]|\\.)*)"(?:\s*,\s*"caption_it"\s*:\s*"((?:[^"\\]|\\.)*)")?/g;
+  let m;
+  while ((m = regex.exec(text))) {
+    const unescape = (s) => (s || '').replace(/\\n/g, '\n').replace(/\\"/g, '"');
+    bubbles.push({ type: m[1], content: unescape(m[2]), caption_it: unescape(m[3]) });
+  }
+  return bubbles;
+}
+
 function safeParseModelJson(text) {
   const cleaned = text.replace(/```json/gi, '').replace(/```/g, '').trim();
   try {
     return JSON.parse(cleaned);
   } catch (e) {
+    const salvaged = extractBubblesFallback(cleaned);
     return {
-      bubbles: [{ type: 'text', content: cleaned || '...' }],
+      bubbles: salvaged.length ? salvaged : [{ type: 'text', content: 'Mh, dammi un secondo.' }],
       relationship_delta: 0,
       memory_add: [],
     };
@@ -51,7 +62,11 @@ app.post('/api/chat', async (req, res) => {
       body: JSON.stringify({
         system_instruction: { parts: [{ text: system }] },
         contents: trimmed,
-        generationConfig: { maxOutputTokens: 700 },
+        generationConfig: {
+          maxOutputTokens: 1536,
+          responseMimeType: 'application/json',
+          thinkingConfig: { thinkingBudget: 0 },
+        },
       }),
     });
 
