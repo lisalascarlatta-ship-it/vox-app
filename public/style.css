@@ -161,6 +161,24 @@ html, body {
   margin: 8px auto; background: none; color: var(--text-dim);
   font-size: 12.5px; text-align: center; max-width: 90%;
 }
+.bubble.wait {
+  font-style: italic;
+  color: #b7bcc6;
+  background: var(--surface);
+  border: 1px dashed var(--surface-2);
+}
+
+.bubble-col { display: flex; flex-direction: column; max-width: 75%; }
+.bubble-row.user .bubble-col { align-items: flex-end; }
+.bubble-row.vox .bubble-col { align-items: flex-start; }
+.bubble-col .bubble { max-width: 100%; }
+.msg-status {
+  font-size: 10.5px;
+  margin: 2px 4px 0;
+  color: var(--text-dim);
+  letter-spacing: -1px;
+}
+.msg-status.read { color: var(--accent); letter-spacing: -1px; }
 
 .bubble img { max-width: 100%; border-radius: 12px; display: block; }
 .bubble.image-placeholder {
