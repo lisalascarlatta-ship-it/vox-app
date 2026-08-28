@@ -1,368 +1,113 @@
-const STORE_KEY = 'vox_chats_v1';
+require('dotenv').config();
+const express = require('express');
+const path = require('path');
+const { buildSystemPrompt } = require('./persona/vox');
 
-function loadChats() {
+const app = express();
+app.use(express.json({ limit: '2mb' }));
+app.use(express.static(path.join(__dirname, 'public')));
+
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+
+function extractBubblesFallback(text) {
+  const bubbles = [];
+  const regex = /"type"\s*:\s*"(text|image)"\s*,\s*"content"\s*:\s*"((?:[^"\\]|\\.)*)"(?:\s*,\s*"caption_it"\s*:\s*"((?:[^"\\]|\\.)*)")?/g;
+  let m;
+  while ((m = regex.exec(text))) {
+    const unescape = (s) => (s || '').replace(/\\n/g, '\n').replace(/\\"/g, '"');
+    bubbles.push({ type: m[1], content: unescape(m[2]), caption_it: unescape(m[3]) });
+  }
+  return bubbles;
+}
+
+function safeParseModelJson(text) {
+  const cleaned = text.replace(/```json/gi, '').replace(/```/g, '').trim();
   try {
-    return JSON.parse(localStorage.getItem(STORE_KEY)) || [];
-  } catch {
-    return [];
+    return JSON.parse(cleaned);
+  } catch (e) {
+    const salvaged = extractBubblesFallback(cleaned);
+    return {
+      bubbles: salvaged.length ? salvaged : [{ type: 'text', content: 'Mh, dammi un secondo.' }],
+      relationship_delta: 0,
+      memory_add: [],
+    };
   }
 }
-function saveChats(chats) {
-  localStorage.setItem(STORE_KEY, JSON.stringify(chats));
-}
-function uid() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-}
 
-let chats = loadChats();
-let activeChatId = null;
-
-const viewList = document.getElementById('view-list');
-const viewChat = document.getElementById('view-chat');
-const chatListEl = document.getElementById('chat-list');
-const emptyState = document.getElementById('empty-state');
-const messagesEl = document.getElementById('messages');
-const typingRow = document.getElementById('typing-row');
-const composer = document.getElementById('composer');
-const inputText = document.getElementById('input-text');
-const chatTitleEl = document.getElementById('chat-title');
-const chatStatusEl = document.getElementById('chat-status');
-const sheetOverlay = document.getElementById('sheet-overlay');
-
-document.getElementById('btn-new-chat').addEventListener('click', createChat);
-document.getElementById('btn-back').addEventListener('click', () => showView('list'));
-document.getElementById('btn-menu').addEventListener('click', () => sheetOverlay.classList.remove('hidden'));
-sheetOverlay.addEventListener('click', (e) => { if (e.target === sheetOverlay) sheetOverlay.classList.add('hidden'); });
-composer.addEventListener('submit', onSend);
-
-sheetOverlay.querySelectorAll('.sheet-item').forEach((btn) => {
-  btn.addEventListener('click', () => handleSheetAction(btn.dataset.action));
-});
-
-function showView(name) {
-  viewList.classList.toggle('hidden', name !== 'list');
-  viewChat.classList.toggle('hidden', name !== 'chat');
-  if (name === 'list') renderChatList();
-}
-
-function renderChatList() {
-  chats = loadChats();
-  chatListEl.innerHTML = '';
-  emptyState.classList.toggle('hidden', chats.length > 0);
-
-  [...chats]
-    .sort((a, b) => b.updatedAt - a.updatedAt)
-    .forEach((chat) => {
-      const last = chat.messages[chat.messages.length - 1];
-      const preview = last
-        ? (last.type === 'image' ? '📷 Immagine' : last.content)
-        : 'Nuova conversazione';
-      const item = document.createElement('div');
-      item.className = 'chat-item';
-      item.innerHTML = `
-        <div class="avatar">V</div>
-        <div class="chat-item-body">
-          <div class="chat-item-top">
-            <div class="chat-item-title">${escapeHtml(chat.title)}</div>
-            <div class="chat-item-time">${last ? formatTime(last.timestamp) : ''}</div>
-          </div>
-          <div class="chat-item-preview">${escapeHtml(preview)}</div>
-        </div>`;
-      item.addEventListener('click', () => openChat(chat.id));
-      chatListEl.appendChild(item);
-    });
-}
-
-function createChat() {
-  const chat = {
-    id: uid(),
-    title: 'Vox — nuova conversazione',
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-    messages: [],
-    relationship: { level: 0 },
-    memory: [],
-  };
-  chats.push(chat);
-  saveChats(chats);
-  openChat(chat.id);
-}
-
-function openChat(id) {
-  activeChatId = id;
-  const chat = getChat();
-  chatTitleEl.textContent = chat.title;
-  updateStatusLabel();
-  renderMessages();
-  showView('chat');
-  inputText.focus();
-}
-
-function getChat() {
-  return chats.find((c) => c.id === activeChatId);
-}
-
-function updateStatusLabel() {
-  const chat = getChat();
-  const level = chat.relationship.level;
-  chatStatusEl.textContent = level > 55 ? 'online · vi conoscete bene' : level > 20 ? 'online' : 'online';
-}
-
-function renderMessages() {
-  const chat = getChat();
-  messagesEl.innerHTML = '';
-  chat.messages.forEach((m) => messagesEl.appendChild(renderBubble(m)));
-  scrollToBottom();
-}
-
-function renderBubble(m) {
-  const wrap = document.createElement('div');
-  wrap.className = `bubble-row ${m.role}`;
-  const col = document.createElement('div');
-  col.className = 'bubble-col';
-  const bubble = document.createElement('div');
-
-  if (m.type === 'image') {
-    if (m.url) {
-      bubble.className = `bubble ${m.role}`;
-      bubble.innerHTML = `<img src="${m.url}" alt="immagine">`;
-    } else {
-      bubble.className = `bubble ${m.role} image-placeholder`;
-      bubble.textContent = `📷 ${m.caption_it || 'Vox ha condiviso un\'immagine (generazione non ancora attiva).'}`;
+app.post('/api/chat', async (req, res) => {
+  try {
+    if (!GROQ_API_KEY) {
+      return res.status(500).json({
+        error: 'GROQ_API_KEY non configurata sul server. Vedi il file .env.example.',
+      });
     }
-  } else if (m.type === 'wait') {
-    bubble.className = `bubble ${m.role} wait`;
-    bubble.textContent = m.content;
-  } else {
-    bubble.className = `bubble ${m.role}`;
-    bubble.textContent = m.content;
-  }
-  col.appendChild(bubble);
 
-  if (m.role === 'user') {
-    const status = document.createElement('div');
-    status.className = `msg-status ${m.status || 'sent'}`;
-    status.textContent = m.status === 'sent' || !m.status ? '✓' : '✓✓';
-    col.appendChild(status);
-  }
+    const { messages = [], relationship = { level: 0 }, memory = [] } = req.body;
+    const system = buildSystemPrompt(relationship, memory);
 
-  wrap.appendChild(col);
-  return wrap;
-}
+    const trimmed = messages.slice(-24).map((m) => ({
+      role: m.role === 'assistant' || m.role === 'vox' ? 'assistant' : 'user',
+      content: m.content,
+    }));
 
-function appendMessage(msg) {
-  const chat = getChat();
-  chat.messages.push(msg);
-  chat.updatedAt = Date.now();
-  saveChats(chats);
-  messagesEl.appendChild(renderBubble(msg));
-  scrollToBottom();
-  return msg;
-}
-
-function updateMessageStatus(msg, status) {
-  if (!msg || msg.status === status) return;
-  msg.status = status;
-  saveChats(chats);
-  renderMessages();
-}
-
-function scrollToBottom() {
-  messagesEl.scrollTop = messagesEl.scrollHeight;
-}
-
-function formatTime(ts) {
-  return new Date(ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-}
-
-function escapeHtml(s) {
-  const d = document.createElement('div');
-  d.textContent = s ?? '';
-  return d.innerHTML;
-}
-
-async function onSend(e) {
-  e.preventDefault();
-  const text = inputText.value.trim();
-  if (!text) return;
-  inputText.value = '';
-
-  appendMessage({ role: 'user', type: 'text', content: text, status: 'sent', timestamp: Date.now() });
-
-  const chat = getChat();
-  if (chat.messages.length === 1) {
-    chat.title = text.length > 28 ? text.slice(0, 28) + '…' : text;
-    chatTitleEl.textContent = chat.title;
-    saveChats(chats);
-  }
-
-  await requestVoxReply();
-}
-
-function lastUserMessage() {
-  const chat = getChat();
-  for (let i = chat.messages.length - 1; i >= 0; i--) {
-    if (chat.messages[i].role === 'user') return chat.messages[i];
-  }
-  return null;
-}
-
-async function requestVoxReply(retryCount = 0) {
-  const chat = getChat();
-  typingRow.classList.remove('hidden');
-  scrollToBottom();
-
-  let res, data;
-  try {
-    res = await fetch('/api/chat', {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${GROQ_API_KEY}`,
+      },
       body: JSON.stringify({
-        messages: chat.messages
-          .filter((m) => m.type !== 'wait')
-          .filter((m) => m.type !== 'image' || m.role === 'user')
-          .map((m) => ({ role: m.role, content: m.content })),
-        relationship: chat.relationship,
-        memory: chat.memory,
+        model: GROQ_MODEL,
+        messages: [{ role: 'system', content: system }, ...trimmed],
+        max_tokens: 1024,
+        response_format: { type: 'json_object' },
       }),
     });
-    data = await res.json();
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error('Groq API error:', errText);
+
+      if (response.status === 429) {
+        const retryHeader = response.headers.get('retry-after');
+        const retrySeconds = retryHeader ? parseInt(retryHeader, 10) : 20;
+        return res.status(429).json({
+          error: 'rate_limit',
+          retryAfterSeconds: Number.isFinite(retrySeconds) && retrySeconds > 0 ? retrySeconds : 20,
+        });
+      }
+      return res.status(502).json({ error: 'Errore nella chiamata al modello AI.' });
+    }
+
+    const data = await response.json();
+    const rawText = data.choices?.[0]?.message?.content || '';
+
+    const parsed = safeParseModelJson(rawText);
+
+    if (!Array.isArray(parsed.bubbles) || parsed.bubbles.length === 0) {
+      parsed.bubbles = [{ type: 'text', content: rawText || '...' }];
+    }
+    if (typeof parsed.relationship_delta !== 'number') parsed.relationship_delta = 0;
+    if (!Array.isArray(parsed.memory_add)) parsed.memory_add = [];
+
+    res.json(parsed);
   } catch (err) {
-    typingRow.classList.add('hidden');
-    appendMessage({
-      role: 'vox',
-      type: 'system',
-      content: `⚠️ Non riesco a raggiungere il backend (${err.message}).`,
-      timestamp: Date.now(),
-    });
-    return;
+    console.error(err);
+    res.status(500).json({ error: 'Errore interno del server.' });
+  }
+});
+
+app.post('/api/image', async (req, res) => {
+  const { prompt } = req.body;
+  const IMAGE_API_KEY = process.env.IMAGE_API_KEY;
+
+  if (!IMAGE_API_KEY) {
+    return res.json({ placeholder: true, prompt });
   }
 
-  updateMessageStatus(lastUserMessage(), 'delivered');
+  return res.json({ placeholder: true, prompt });
+});
 
-  if (res.status === 429 && data.error === 'rate_limit') {
-    typingRow.classList.add('hidden');
-
-    if (retryCount >= 2) {
-      appendMessage({
-        role: 'vox',
-        type: 'wait',
-        content: 'Vox è irraggiungibile per il momento: è stato superato il limite di richieste del piano gratuito. Aspetta circa un minuto e riprova a scrivergli.',
-        timestamp: Date.now(),
-      });
-      return;
-    }
-
-    const seconds = data.retryAfterSeconds || 20;
-    appendMessage({
-      role: 'vox',
-      type: 'wait',
-      content: `Vox è impegnato al momento. Ti risponderà tra circa ${seconds} secondi…`,
-      timestamp: Date.now(),
-    });
-    await delay(seconds * 1000 + 800);
-    await requestVoxReply(retryCount + 1);
-    return;
-  }
-
-  if (!res.ok) {
-    typingRow.classList.add('hidden');
-    appendMessage({
-      role: 'vox',
-      type: 'system',
-      content: `⚠️ ${data.error || 'Errore sconosciuto'}`,
-      timestamp: Date.now(),
-    });
-    return;
-  }
-
-  updateMessageStatus(lastUserMessage(), 'read');
-
-  chat.relationship.level = Math.max(0, Math.min(100, chat.relationship.level + (data.relationship_delta || 0)));
-  if (data.memory_add && data.memory_add.length) {
-    chat.memory.push(...data.memory_add.filter(Boolean));
-    chat.memory = chat.memory.slice(-30);
-  }
-  saveChats(chats);
-  updateStatusLabel();
-
-  for (const bubble of data.bubbles) {
-    await delay(typingDelayFor(bubble.content));
-    if (bubble.type === 'image') {
-      await handleImageBubble(bubble);
-    } else {
-      appendMessage({ role: 'vox', type: 'text', content: bubble.content, timestamp: Date.now() });
-    }
-  }
-
-  typingRow.classList.add('hidden');
-}
-
-async function handleImageBubble(bubble) {
-  appendMessage({ role: 'vox', type: 'image', content: bubble.content, caption_it: bubble.caption_it, url: null, timestamp: Date.now() });
-  try {
-    const res = await fetch('/api/image', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: bubble.content }),
-    });
-    const data = await res.json();
-    if (data.url) {
-      const chat = getChat();
-      const last = chat.messages[chat.messages.length - 1];
-      last.url = data.url;
-      saveChats(chats);
-      renderMessages();
-    }
-  } catch {
-    // resta il placeholder, nessun crash
-  }
-}
-
-function typingDelayFor(text) {
-  const base = 500;
-  const perChar = 16;
-  return Math.min(2600, base + (text?.length || 0) * perChar);
-}
-function delay(ms) { return new Promise((r) => setTimeout(r, ms)); }
-
-function handleSheetAction(action) {
-  sheetOverlay.classList.add('hidden');
-  const chat = getChat();
-  if (!chat) return;
-
-  if (action === 'rename') {
-    const name = prompt('Nuovo nome della conversazione:', chat.title);
-    if (name && name.trim()) {
-      chat.title = name.trim();
-      chatTitleEl.textContent = chat.title;
-      saveChats(chats);
-    }
-  } else if (action === 'duplicate') {
-    const copy = { ...chat, id: uid(), title: chat.title + ' (copia)', messages: JSON.parse(JSON.stringify(chat.messages)) };
-    chats.push(copy);
-    saveChats(chats);
-    alert('Conversazione duplicata.');
-  } else if (action === 'export') {
-    const blob = new Blob([JSON.stringify(chat, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `${chat.title.replace(/[^a-z0-9]+/gi, '_')}.json`;
-    a.click();
-  } else if (action === 'delete') {
-    if (confirm('Eliminare questa conversazione? Non si può annullare.')) {
-      chats = chats.filter((c) => c.id !== chat.id);
-      saveChats(chats);
-      showView('list');
-    }
-  }
-}
-
-renderChatList();
-showView('list');
-
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
-  });
-}
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Vox app in ascolto su http://localhost:${PORT}`));
