@@ -16,6 +16,8 @@ function uid() {
 
 let chats = loadChats();
 let activeChatId = null;
+const offlineChats = new Set();
+const activeRequests = new Set();
 
 const viewList = document.getElementById('view-list');
 const viewChat = document.getElementById('view-chat');
@@ -104,8 +106,14 @@ function getChat() {
 
 function updateStatusLabel() {
   const chat = getChat();
+  if (offlineChats.has(chat.id)) {
+    chatStatusEl.textContent = 'offline';
+    chatStatusEl.classList.add('dim');
+    return;
+  }
+  chatStatusEl.classList.remove('dim');
   const level = chat.relationship.level;
-  chatStatusEl.textContent = level > 55 ? 'online · vi conoscete bene' : level > 20 ? 'online' : 'online';
+  chatStatusEl.textContent = level > 55 ? 'online · vi conoscete bene' : 'online';
 }
 
 function renderMessages() {
@@ -187,16 +195,18 @@ async function onSend(e) {
   if (!text) return;
   inputText.value = '';
 
+  const chat = getChat();
   appendMessage({ role: 'user', type: 'text', content: text, status: 'sent', timestamp: Date.now() });
 
-  const chat = getChat();
   if (chat.messages.length === 1) {
     chat.title = text.length > 28 ? text.slice(0, 28) + '…' : text;
     chatTitleEl.textContent = chat.title;
     saveChats(chats);
   }
 
-  await requestVoxReply();
+  if (!activeRequests.has(chat.id)) {
+    await requestVoxReply();
+  }
 }
 
 function lastUserMessage() {
@@ -209,80 +219,86 @@ function lastUserMessage() {
 
 async function requestVoxReply(retryCount = 0) {
   const chat = getChat();
-  typingRow.classList.remove('hidden');
-  scrollToBottom();
+  activeRequests.add(chat.id);
 
-  let res, data, networkFailed = false;
   try {
-    res = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages: chat.messages
-          .filter((m) => m.type !== 'wait')
-          .filter((m) => m.type !== 'image' || m.role === 'user')
-          .map((m) => ({ role: m.role, content: m.content })),
-        relationship: chat.relationship,
-        memory: chat.memory,
-      }),
-    });
-    data = await res.json();
-  } catch (err) {
-    networkFailed = true;
-  }
+    typingRow.classList.remove('hidden');
+    scrollToBottom();
 
-  if (!networkFailed) updateMessageStatus(lastUserMessage(), 'delivered');
-
-  const isRateLimited = !networkFailed && res.status === 429 && data?.error === 'rate_limit';
-  const isOtherFailure = networkFailed || (res && !res.ok && !isRateLimited);
-
-  if (isRateLimited || isOtherFailure) {
-    typingRow.classList.add('hidden');
-
-    if (retryCount >= 2) {
-      appendMessage({
-        role: 'vox',
-        type: 'wait',
-        content: 'Vox non riesce a rispondere in questo momento. Riprova a scrivergli tra un minuto.',
-        timestamp: Date.now(),
+    let res, data, networkFailed = false;
+    try {
+      res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: chat.messages
+            .filter((m) => m.type !== 'wait')
+            .filter((m) => m.type !== 'image' || m.role === 'user')
+            .map((m) => ({ role: m.role, content: m.content })),
+          relationship: chat.relationship,
+          memory: chat.memory,
+        }),
       });
+      data = await res.json();
+    } catch (err) {
+      networkFailed = true;
+    }
+
+    if (!networkFailed) updateMessageStatus(lastUserMessage(), 'delivered');
+
+    const isRateLimited = !networkFailed && res.status === 429 && data?.error === 'rate_limit';
+    const isOtherFailure = networkFailed || (res && !res.ok && !isRateLimited);
+
+    if (isRateLimited || isOtherFailure) {
+      typingRow.classList.add('hidden');
+
+      const justWentOffline = !offlineChats.has(chat.id);
+      offlineChats.add(chat.id);
+      if (activeChatId === chat.id) updateStatusLabel();
+
+      if (justWentOffline) {
+        appendMessage({
+          role: 'vox',
+          type: 'wait',
+          content: 'Vox non risponde al momento. Prova a riscrivergli tra un po\'.',
+          timestamp: Date.now(),
+        });
+      }
+
+      if (retryCount >= 4) {
+        return;
+      }
+
+      const seconds = isRateLimited ? (data.retryAfterSeconds || 20) : 15;
+      await delay(seconds * 1000 + 500);
+      await requestVoxReply(retryCount + 1);
       return;
     }
 
-    const seconds = isRateLimited ? (data.retryAfterSeconds || 20) : 12;
-    appendMessage({
-      role: 'vox',
-      type: 'wait',
-      content: isRateLimited
-        ? `Vox è impegnato al momento. Ti risponderà tra circa ${seconds} secondi…`
-        : 'Vox non ha ancora visto il messaggio…',
-      timestamp: Date.now(),
-    });
-    await delay(seconds * 1000 + 800);
-    await requestVoxReply(retryCount + 1);
-    return;
-  }
+    offlineChats.delete(chat.id);
+    if (activeChatId === chat.id) updateStatusLabel();
+    updateMessageStatus(lastUserMessage(), 'read');
 
-  updateMessageStatus(lastUserMessage(), 'read');
-
-  chat.relationship.level = Math.max(0, Math.min(100, chat.relationship.level + (data.relationship_delta || 0)));
-  if (data.memory_add && data.memory_add.length) {
-    chat.memory.push(...data.memory_add.filter(Boolean));
-    chat.memory = chat.memory.slice(-30);
-  }
-  saveChats(chats);
-  updateStatusLabel();
-
-  for (const bubble of data.bubbles) {
-    await delay(typingDelayFor(bubble.content));
-    if (bubble.type === 'image') {
-      await handleImageBubble(bubble);
-    } else {
-      appendMessage({ role: 'vox', type: 'text', content: bubble.content, timestamp: Date.now() });
+    chat.relationship.level = Math.max(0, Math.min(100, chat.relationship.level + (data.relationship_delta || 0)));
+    if (data.memory_add && data.memory_add.length) {
+      chat.memory.push(...data.memory_add.filter(Boolean));
+      chat.memory = chat.memory.slice(-30);
     }
-  }
+    saveChats(chats);
 
-  typingRow.classList.add('hidden');
+    for (const bubble of data.bubbles) {
+      await delay(typingDelayFor(bubble.content));
+      if (bubble.type === 'image') {
+        await handleImageBubble(bubble);
+      } else {
+        appendMessage({ role: 'vox', type: 'text', content: bubble.content, timestamp: Date.now() });
+      }
+    }
+
+    typingRow.classList.add('hidden');
+  } finally {
+    activeRequests.delete(chat.id);
+  }
 }
 
 async function handleImageBubble(bubble) {
@@ -352,4 +368,4 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   });
-}
+  }
