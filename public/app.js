@@ -212,7 +212,7 @@ async function requestVoxReply(retryCount = 0) {
   typingRow.classList.remove('hidden');
   scrollToBottom();
 
-  let res, data;
+  let res, data, networkFailed = false;
   try {
     res = await fetch('/api/chat', {
       method: 'POST',
@@ -228,51 +228,38 @@ async function requestVoxReply(retryCount = 0) {
     });
     data = await res.json();
   } catch (err) {
-    typingRow.classList.add('hidden');
-    appendMessage({
-      role: 'vox',
-      type: 'system',
-      content: `⚠️ Non riesco a raggiungere il backend (${err.message}).`,
-      timestamp: Date.now(),
-    });
-    return;
+    networkFailed = true;
   }
 
-  updateMessageStatus(lastUserMessage(), 'delivered');
+  if (!networkFailed) updateMessageStatus(lastUserMessage(), 'delivered');
 
-  if (res.status === 429 && data.error === 'rate_limit') {
+  const isRateLimited = !networkFailed && res.status === 429 && data?.error === 'rate_limit';
+  const isOtherFailure = networkFailed || (res && !res.ok && !isRateLimited);
+
+  if (isRateLimited || isOtherFailure) {
     typingRow.classList.add('hidden');
 
     if (retryCount >= 2) {
       appendMessage({
         role: 'vox',
         type: 'wait',
-        content: 'Vox è irraggiungibile per il momento: è stato superato il limite di richieste del piano gratuito. Aspetta circa un minuto e riprova a scrivergli.',
+        content: 'Vox non riesce a rispondere in questo momento. Riprova a scrivergli tra un minuto.',
         timestamp: Date.now(),
       });
       return;
     }
 
-    const seconds = data.retryAfterSeconds || 20;
+    const seconds = isRateLimited ? (data.retryAfterSeconds || 20) : 12;
     appendMessage({
       role: 'vox',
       type: 'wait',
-      content: `Vox è impegnato al momento. Ti risponderà tra circa ${seconds} secondi…`,
+      content: isRateLimited
+        ? `Vox è impegnato al momento. Ti risponderà tra circa ${seconds} secondi…`
+        : 'Vox non ha ancora visto il messaggio…',
       timestamp: Date.now(),
     });
     await delay(seconds * 1000 + 800);
     await requestVoxReply(retryCount + 1);
-    return;
-  }
-
-  if (!res.ok) {
-    typingRow.classList.add('hidden');
-    appendMessage({
-      role: 'vox',
-      type: 'system',
-      content: `⚠️ ${data.error || 'Errore sconosciuto'}`,
-      timestamp: Date.now(),
-    });
     return;
   }
 
@@ -365,4 +352,4 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   });
-        }
+}
