@@ -7,8 +7,8 @@ const app = express();
 app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 
 function extractBubblesFallback(text) {
   const bubbles = [];
@@ -37,9 +37,9 @@ function safeParseModelJson(text) {
 
 app.post('/api/chat', async (req, res) => {
   try {
-    if (!GEMINI_API_KEY) {
+    if (!GROQ_API_KEY) {
       return res.status(500).json({
-        error: 'GEMINI_API_KEY non configurata sul server. Vedi il file .env.example.',
+        error: 'GROQ_API_KEY non configurata sul server. Vedi il file .env.example.',
       });
     }
 
@@ -47,55 +47,41 @@ app.post('/api/chat', async (req, res) => {
     const system = buildSystemPrompt(relationship, memory);
 
     const trimmed = messages.slice(-24).map((m) => ({
-      role: m.role === 'assistant' || m.role === 'vox' ? 'model' : 'user',
-      parts: [{ text: m.content }],
+      role: m.role === 'assistant' || m.role === 'vox' ? 'assistant' : 'user',
+      content: m.content,
     }));
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
-
-    const response = await fetch(url, {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-goog-api-key': GEMINI_API_KEY,
+        Authorization: `Bearer ${GROQ_API_KEY}`,
       },
       body: JSON.stringify({
-        system_instruction: { parts: [{ text: system }] },
-        contents: trimmed,
-        generationConfig: {
-          maxOutputTokens: 1536,
-          responseMimeType: 'application/json',
-        },
+        model: GROQ_MODEL,
+        messages: [{ role: 'system', content: system }, ...trimmed],
+        max_tokens: 1024,
+        response_format: { type: 'json_object' },
       }),
     });
 
     if (!response.ok) {
       const errText = await response.text();
-      console.error('Gemini API error:', errText);
+      console.error('Groq API error:', errText);
 
-      let retrySeconds = null;
-      try {
-        const errJson = JSON.parse(errText);
-        const errObj = errJson.error || errJson;
-        if (errObj.code === 429 || errObj.status === 'RESOURCE_EXHAUSTED') {
-          const retryInfo = (errObj.details || []).find(
-            (d) => (d['@type'] || '').includes('RetryInfo')
-          );
-          const parsedDelay = retryInfo && parseInt(retryInfo.retryDelay, 10);
-          retrySeconds = Number.isFinite(parsedDelay) && parsedDelay > 0 ? parsedDelay : 20;
-        }
-      } catch {
-        // errText non era JSON valido, ignoriamo e trattiamo come errore generico
-      }
-
-      if (retrySeconds) {
-        return res.status(429).json({ error: 'rate_limit', retryAfterSeconds: retrySeconds });
+      if (response.status === 429) {
+        const retryHeader = response.headers.get('retry-after');
+        const retrySeconds = retryHeader ? parseInt(retryHeader, 10) : 20;
+        return res.status(429).json({
+          error: 'rate_limit',
+          retryAfterSeconds: Number.isFinite(retrySeconds) && retrySeconds > 0 ? retrySeconds : 20,
+        });
       }
       return res.status(502).json({ error: 'Errore nella chiamata al modello AI.' });
     }
 
     const data = await response.json();
-    const rawText = data.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('\n') || '';
+    const rawText = data.choices?.[0]?.message?.content || '';
 
     const parsed = safeParseModelJson(rawText);
 
