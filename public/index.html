@@ -73,11 +73,27 @@
 <!-- ===== MENU CONVERSAZIONE (bottom sheet) ===== -->
 <div id="sheet-overlay" class="sheet-overlay hidden">
   <div class="sheet">
+    <button class="sheet-item" data-action="scenario">Imposta il tipo di rapporto</button>
     <button class="sheet-item" data-action="rename">Rinomina conversazione</button>
     <button class="sheet-item" data-action="duplicate">Duplica conversazione</button>
     <button class="sheet-item" data-action="export">Esporta conversazione (.json)</button>
     <button class="sheet-item danger" data-action="delete">Elimina conversazione</button>
     <button class="sheet-item" data-action="cancel">Annulla</button>
+  </div>
+</div>
+
+<!-- ===== MENU SCENARIO (bottom sheet) ===== -->
+<div id="scenario-overlay" class="sheet-overlay hidden">
+  <div class="sheet">
+    <div class="sheet-title">Che rapporto avete in questa chat?</div>
+    <button class="sheet-item" data-scenario="default">Nessuno in particolare</button>
+    <button class="sheet-item" data-scenario="capo-assistente">Lui è il capo, tu la sua nuova assistente</button>
+    <button class="sheet-item" data-scenario="angelo-demone">Un angelo e un demone, legati da un patto</button>
+    <button class="sheet-item" data-scenario="ex">Ex che si sono ritrovati</button>
+    <button class="sheet-item" data-scenario="vicini">Vicini di casa</button>
+    <button class="sheet-item" data-scenario="colleghi">Colleghi di lavoro</button>
+    <button class="sheet-item" data-scenario="custom">Personalizzato…</button>
+    <button class="sheet-item" data-scenario="cancel">Annulla</button>
   </div>
 </div>
 
