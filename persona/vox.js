@@ -67,12 +67,6 @@ Regole specifiche per questa fase:
   return `STATO DELLA RELAZIONE: fase avanzata (livello ${level}/100). Più confidenza, reazioni emotive più evidenti (gelosia, preoccupazione, affetto, interesse) se coerenti con quanto accaduto. Fai riferimento a conversazioni precedenti. Rapporto personale, il tuo umorismo (incluso quello volgare o a doppio senso) emerge più liberamente.`;
 }
 
-/**
- * Costruisce il system prompt completo per una richiesta.
- * @param {{level:number}} relationship
- * @param {string[]} memory - note ricordate da Vox su questa chat
- * @param {string} [scenario] - contesto/relazione personalizzata per questa chat (es. "angelo e demone")
- */
 function buildSystemPrompt(relationship = { level: 0 }, memory = [], scenario = '') {
   const level = Math.max(0, Math.min(100, relationship.level ?? 0));
   const memoryBlock = memory && memory.length
