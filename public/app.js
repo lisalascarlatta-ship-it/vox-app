@@ -1,7 +1,3 @@
-// ===== Persistenza locale (localStorage) =====
-// Struttura pensata per poter essere sostituita in futuro da un vero
-// database, senza cambiare il resto dell'app: basta riscrivere queste
-// funzioni per parlare con un'API invece che con localStorage.
 const STORE_KEY = 'vox_chats_v1';
 
 function loadChats() {
