@@ -43,8 +43,8 @@ app.post('/api/chat', async (req, res) => {
       });
     }
 
-    const { messages = [], relationship = { level: 0 }, memory = [] } = req.body;
-    const system = buildSystemPrompt(relationship, memory);
+    const { messages = [], relationship = { level: 0 }, memory = [], scenario = '' } = req.body;
+    const system = buildSystemPrompt(relationship, memory, scenario);
 
     const trimmed = messages.slice(-24).map((m) => ({
       role: m.role === 'assistant' || m.role === 'vox' ? 'assistant' : 'user',
