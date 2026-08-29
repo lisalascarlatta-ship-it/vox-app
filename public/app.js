@@ -30,15 +30,29 @@ const inputText = document.getElementById('input-text');
 const chatTitleEl = document.getElementById('chat-title');
 const chatStatusEl = document.getElementById('chat-status');
 const sheetOverlay = document.getElementById('sheet-overlay');
+const scenarioOverlay = document.getElementById('scenario-overlay');
+
+const SCENARIO_PRESETS = {
+  default: '',
+  'capo-assistente': 'Tu sei il capo/titolare di un\'attività, l\'utente è la sua nuova assistente o collaboratrice. Il rapporto parte professionale, ma può evolvere nel tempo.',
+  'angelo-demone': 'Tu sei un demone (o un\'entità infernale), l\'utente un angelo — o viceversa a seconda di come si presenta. Siete legati da un patto, o da un fantomatico "matrimonio riparatore" tra Paradiso e Inferno. Tono scherzoso e leggermente fantasy.',
+  ex: 'Tu e l\'utente siete stati insieme in passato, e vi siete ritrovati a scrivervi dopo tempo.',
+  vicini: 'Tu e l\'utente siete vicini di casa.',
+  colleghi: 'Tu e l\'utente siete colleghi di lavoro nello stesso ufficio.',
+};
 
 document.getElementById('btn-new-chat').addEventListener('click', createChat);
 document.getElementById('btn-back').addEventListener('click', () => showView('list'));
 document.getElementById('btn-menu').addEventListener('click', () => sheetOverlay.classList.remove('hidden'));
 sheetOverlay.addEventListener('click', (e) => { if (e.target === sheetOverlay) sheetOverlay.classList.add('hidden'); });
+scenarioOverlay.addEventListener('click', (e) => { if (e.target === scenarioOverlay) scenarioOverlay.classList.add('hidden'); });
 composer.addEventListener('submit', onSend);
 
 sheetOverlay.querySelectorAll('.sheet-item').forEach((btn) => {
   btn.addEventListener('click', () => handleSheetAction(btn.dataset.action));
+});
+scenarioOverlay.querySelectorAll('.sheet-item').forEach((btn) => {
+  btn.addEventListener('click', () => handleScenarioChoice(btn.dataset.scenario));
 });
 
 function showView(name) {
@@ -84,6 +98,7 @@ function createChat() {
     messages: [],
     relationship: { level: 0 },
     memory: [],
+    scenario: '',
   };
   chats.push(chat);
   saveChats(chats);
@@ -237,6 +252,7 @@ async function requestVoxReply(retryCount = 0) {
             .map((m) => ({ role: m.role, content: m.content })),
           relationship: chat.relationship,
           memory: chat.memory,
+          scenario: chat.scenario || '',
         }),
       });
       data = await res.json();
@@ -334,7 +350,9 @@ function handleSheetAction(action) {
   const chat = getChat();
   if (!chat) return;
 
-  if (action === 'rename') {
+  if (action === 'scenario') {
+    scenarioOverlay.classList.remove('hidden');
+  } else if (action === 'rename') {
     const name = prompt('Nuovo nome della conversazione:', chat.title);
     if (name && name.trim()) {
       chat.title = name.trim();
@@ -361,6 +379,26 @@ function handleSheetAction(action) {
   }
 }
 
+function handleScenarioChoice(key) {
+  scenarioOverlay.classList.add('hidden');
+  if (!key || key === 'cancel') return;
+
+  const chat = getChat();
+  if (!chat) return;
+
+  if (key === 'custom') {
+    const text = prompt('Descrivi il tipo di rapporto tra te e Vox in questa chat:', chat.scenario || '');
+    if (text !== null) {
+      chat.scenario = text.trim();
+      saveChats(chats);
+    }
+    return;
+  }
+
+  chat.scenario = SCENARIO_PRESETS[key] ?? '';
+  saveChats(chats);
+}
+
 renderChatList();
 showView('list');
 
@@ -368,4 +406,4 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   });
-  }
+}
