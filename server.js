@@ -43,8 +43,8 @@ app.post('/api/chat', async (req, res) => {
       });
     }
 
-    const { messages = [], relationship = { level: 0 }, memory = [], scenario = '' } = req.body;
-    const system = buildSystemPrompt(relationship, memory, scenario);
+    const { messages = [], relationship = { level: 0 }, memory = [], scenario = '', moodHint = '' } = req.body;
+    const system = buildSystemPrompt(relationship, memory, scenario, moodHint);
 
     const trimmed = messages.slice(-24).map((m) => ({
       role: m.role === 'assistant' || m.role === 'vox' ? 'assistant' : 'user',
@@ -61,6 +61,7 @@ app.post('/api/chat', async (req, res) => {
         model: GROQ_MODEL,
         messages: [{ role: 'system', content: system }, ...trimmed],
         max_tokens: 1024,
+        temperature: 0.75,
         response_format: { type: 'json_object' },
       }),
     });
