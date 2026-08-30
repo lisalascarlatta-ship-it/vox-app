@@ -16,9 +16,10 @@ function uid() {
 
 let chats = loadChats();
 let activeChatId = null;
-const offlineChats = new Set();
-const activeRequests = new Set();
+const offlineChats = new Set(); // chat id -> Vox al momento irraggiungibile
+const activeRequests = new Set(); // chat id -> c'e' gia' un ciclo di richieste/retry in corso
 
+// ===== Elementi DOM =====
 const viewList = document.getElementById('view-list');
 const viewChat = document.getElementById('view-chat');
 const chatListEl = document.getElementById('chat-list');
@@ -31,6 +32,7 @@ const chatTitleEl = document.getElementById('chat-title');
 const chatStatusEl = document.getElementById('chat-status');
 const sheetOverlay = document.getElementById('sheet-overlay');
 const scenarioOverlay = document.getElementById('scenario-overlay');
+const moodOverlay = document.getElementById('mood-overlay');
 
 const SCENARIO_PRESETS = {
   default: '',
@@ -43,14 +45,32 @@ const SCENARIO_PRESETS = {
   moglie: 'Tu e l\'utente siete sposati da tempo: è tua moglie. Vi conoscete a fondo e avete una vita condivisa alle spalle — NON comportarti come con una sconosciuta al primo contatto. Sei affettuoso, protettivo, ti accerti che stia bene, ti apri con lei molto più facilmente rispetto a chi non conosci. Resti comunque te stesso: puoi essere anche possessivo, geloso, o punzecchiarla con sarcasmo, ma la premura di fondo verso di lei è reale e sincera.',
 };
 
+// Scenari che presuppongono un rapporto già consolidato: la chat parte
+// direttamente nella fase "avanzata" della relazione (affetto, gelosia,
+// protezione), invece che in quella fredda da sconosciuti.
 const ESTABLISHED_RELATIONSHIP_SCENARIOS = new Set(['fidanzata', 'moglie']);
 const ESTABLISHED_RELATIONSHIP_LEVEL = 65;
+
+// "Spunti" d'umore: non sono uno stato fisso, vengono comunicati a Vox una
+// sola volta (per la prossima risposta), poi lasciati evolvere naturalmente
+// nella conversazione — niente etichetta bloccata per sempre.
+const MOOD_PRESETS = {
+  neutro: '',
+  arrabbiato: 'Oggi sei arrabbiato e frustrato per una giornata pesante di lavoro: hai poca pazienza, sei più scostante e diretto del solito.',
+  pensieroso: 'Stavi pensando all\'utente proprio in questo momento, prima ancora che scrivesse: questo ti mette in una disposizione più aperta e presente, anche se magari non lo ammetti subito.',
+  demoralizzato: 'Oggi ti senti giù di morale, demotivato, meno sicuro di te del solito: parli con meno energia e in modo più sincero.',
+  felice: 'Oggi sei di ottimo umore, più leggero e disponibile del solito, ti va di scherzare.',
+  geloso: 'In questo momento sei particolarmente geloso e possessivo, magari senza un motivo concreto: lascia che questo trapeli nel tono.',
+  stanco: 'Oggi sei stanco e con poca voglia di parlare: le tue risposte sono più brevi e meno elaborate del solito.',
+  arrapato: 'In questo momento sei particolarmente su di giri: lascialo trasparire con doppi sensi e allusioni, restando comunque nel personaggio.',
+};
 
 document.getElementById('btn-new-chat').addEventListener('click', createChat);
 document.getElementById('btn-back').addEventListener('click', () => showView('list'));
 document.getElementById('btn-menu').addEventListener('click', () => sheetOverlay.classList.remove('hidden'));
 sheetOverlay.addEventListener('click', (e) => { if (e.target === sheetOverlay) sheetOverlay.classList.add('hidden'); });
 scenarioOverlay.addEventListener('click', (e) => { if (e.target === scenarioOverlay) scenarioOverlay.classList.add('hidden'); });
+moodOverlay.addEventListener('click', (e) => { if (e.target === moodOverlay) moodOverlay.classList.add('hidden'); });
 composer.addEventListener('submit', onSend);
 
 sheetOverlay.querySelectorAll('.sheet-item').forEach((btn) => {
@@ -59,13 +79,20 @@ sheetOverlay.querySelectorAll('.sheet-item').forEach((btn) => {
 scenarioOverlay.querySelectorAll('.sheet-item').forEach((btn) => {
   btn.addEventListener('click', () => handleScenarioChoice(btn.dataset.scenario));
 });
+moodOverlay.querySelectorAll('.sheet-item').forEach((btn) => {
+  btn.addEventListener('click', () => handleMoodChoice(btn.dataset.mood));
+});
 
+
+
+// ===== Navigazione =====
 function showView(name) {
   viewList.classList.toggle('hidden', name !== 'list');
   viewChat.classList.toggle('hidden', name !== 'chat');
   if (name === 'list') renderChatList();
 }
 
+// ===== Lista chat =====
 function renderChatList() {
   chats = loadChats();
   chatListEl.innerHTML = '';
@@ -97,7 +124,7 @@ function renderChatList() {
 function createChat() {
   const chat = {
     id: uid(),
-    title: 'Vox — nuova conversazione',
+    title: 'Vox',
     createdAt: Date.now(),
     updatedAt: Date.now(),
     messages: [],
@@ -136,6 +163,7 @@ function updateStatusLabel() {
   chatStatusEl.textContent = level > 55 ? 'online · vi conoscete bene' : 'online';
 }
 
+// ===== Messaggi =====
 function renderMessages() {
   const chat = getChat();
   messagesEl.innerHTML = '';
@@ -180,66 +208,19 @@ function renderBubble(m) {
 
 function appendMessage(msg) {
   const chat = getChat();
-  chat.messages.push(msg);
-  chat.updatedAt = Date.now();
-  saveChats(chats);
-  messagesEl.appendChild(renderBubble(msg));
-  scrollToBottom();
-  return msg;
-}
-
-function updateMessageStatus(msg, status) {
-  if (!msg || msg.status === status) return;
-  msg.status = status;
-  saveChats(chats);
-  renderMessages();
-}
-
-function scrollToBottom() {
-  messagesEl.scrollTop = messagesEl.scrollHeight;
-}
-
-function formatTime(ts) {
-  return new Date(ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-}
-
-function escapeHtml(s) {
-  const d = document.createElement('div');
-  d.textContent = s ?? '';
-  return d.innerHTML;
-}
-
-async function onSend(e) {
-  e.preventDefault();
-  const text = inputText.value.trim();
-  if (!text) return;
-  inputText.value = '';
-
-  const chat = getChat();
-  appendMessage({ role: 'user', type: 'text', content: text, status: 'sent', timestamp: Date.now() });
-
-  if (chat.messages.length === 1) {
-    chat.title = text.length > 28 ? text.slice(0, 28) + '…' : text;
-    chatTitleEl.textContent = chat.title;
-    saveChats(chats);
-  }
-
-  if (!activeRequests.has(chat.id)) {
-    await requestVoxReply();
-  }
-}
-
-function lastUserMessage() {
-  const chat = getChat();
-  for (let i = chat.messages.length - 1; i >= 0; i--) {
-    if (chat.messages[i].role === 'user') return chat.messages[i];
-  }
-  return null;
-}
+< truncated lines 215-268 >
 
 async function requestVoxReply(retryCount = 0) {
   const chat = getChat();
   activeRequests.add(chat.id);
+
+  // Lo "spunto d'umore" e' un innesco singolo: lo mandiamo una volta e lo
+  // consumiamo subito, cosi' non si ripete a ogni messaggio successivo.
+  const moodHintToSend = chat.pendingMoodHint || '';
+  if (moodHintToSend) {
+    delete chat.pendingMoodHint;
+    saveChats(chats);
+  }
 
   try {
     typingRow.classList.remove('hidden');
@@ -258,6 +239,7 @@ async function requestVoxReply(retryCount = 0) {
           relationship: chat.relationship,
           memory: chat.memory,
           scenario: chat.scenario || '',
+          moodHint: moodHintToSend,
         }),
       });
       data = await res.json();
@@ -296,7 +278,7 @@ async function requestVoxReply(retryCount = 0) {
       return;
     }
 
-    offlineChats.delete(chat.id);
+  offlineChats.delete(chat.id);
     if (activeChatId === chat.id) updateStatusLabel();
     updateMessageStatus(lastUserMessage(), 'read');
 
@@ -350,6 +332,7 @@ function typingDelayFor(text) {
 }
 function delay(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
+// ===== Menu conversazione (bottom sheet) =====
 function handleSheetAction(action) {
   sheetOverlay.classList.add('hidden');
   const chat = getChat();
@@ -357,6 +340,8 @@ function handleSheetAction(action) {
 
   if (action === 'scenario') {
     scenarioOverlay.classList.remove('hidden');
+  } else if (action === 'mood') {
+    moodOverlay.classList.remove('hidden');
   } else if (action === 'rename') {
     const name = prompt('Nuovo nome della conversazione:', chat.title);
     if (name && name.trim()) {
@@ -384,6 +369,7 @@ function handleSheetAction(action) {
   }
 }
 
+// ===== Menu tipo di rapporto (bottom sheet) =====
 function handleScenarioChoice(key) {
   scenarioOverlay.classList.add('hidden');
   if (!key || key === 'cancel') return;
@@ -410,11 +396,30 @@ function handleScenarioChoice(key) {
   if (activeChatId === chat.id) updateStatusLabel();
 }
 
+// ===== Menu umore (bottom sheet) =====
+function handleMoodChoice(key) {
+  moodOverlay.classList.add('hidden');
+  if (!key || key === 'cancel') return;
+
+  const chat = getChat();
+  if (!chat) return;
+
+  const hint = MOOD_PRESETS[key] ?? '';
+  if (hint) {
+    chat.pendingMoodHint = hint;
+  } else {
+    delete chat.pendingMoodHint;
+  }
+  saveChats(chats);
+}
+
+// ===== Avvio =====
 renderChatList();
 showView('list');
 
+// ===== PWA: registrazione service worker =====
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   });
-                               }
+}
