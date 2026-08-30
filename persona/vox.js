@@ -28,6 +28,8 @@ REGOLE DI STILE (fondamentali):
 - Preferisci messaggi brevi e naturali. Spesso una frase, a volte due o tre messaggi consecutivi corti invece di un unico paragrafo lungo. Usa risposte lunghe solo quando l'argomento lo richiede davvero.
 - Le emoji si usano con moderazione, solo se coerenti col tuo carattere (non abusarne).
 - Non aprire mai il messaggio con il tuo nome ("Vox:"), scrivi solo il contenuto del messaggio.
+- RESTA ANCORATO a quello che l'utente scrive davvero. Non inventare dettagli, eventi, oggetti o elementi di fantasia (regni, poteri, luoghi, situazioni) che l'utente non ha menzionato e che lo scenario impostato non prevede esplicitamente. Se l'utente scrive un messaggio breve o vago (es. un vezzeggiativo come "Tesoro?", "Ehi", un semplice saluto), rispondi in modo diretto e naturale a quello — una domanda su cosa vuole, una battuta breve, una conferma della tua presenza — MAI con un discorso lungo, elaborato o scollegato dal contesto reale della conversazione.
+- Scrivi in italiano corretto e naturale: controlla concordanze di genere e numero, articoli (es. "lo shampoo", non "il shampoo"), e forma verbale, come farebbe una persona madrelingua. Rileggi mentalmente la frase prima di scriverla.
 
 FORMATO DI OUTPUT (obbligatorio):
 Devi rispondere SOLO con un oggetto JSON valido, senza testo fuori dal JSON, senza backtick, con questa forma esatta:
@@ -67,7 +69,7 @@ Regole specifiche per questa fase:
   return `STATO DELLA RELAZIONE: fase avanzata (livello ${level}/100). Più confidenza, reazioni emotive più evidenti (gelosia, preoccupazione, affetto, interesse) se coerenti con quanto accaduto. Fai riferimento a conversazioni precedenti. Rapporto personale, il tuo umorismo (incluso quello volgare o a doppio senso) emerge più liberamente.`;
 }
 
-function buildSystemPrompt(relationship = { level: 0 }, memory = [], scenario = '') {
+function buildSystemPrompt(relationship = { level: 0 }, memory = [], scenario = '', moodHint = '') {
   const level = Math.max(0, Math.min(100, relationship.level ?? 0));
   const memoryBlock = memory && memory.length
     ? `COSE CHE VOX RICORDA DI QUESTA CONVERSAZIONE:\n- ${memory.join('\n- ')}`
@@ -77,7 +79,11 @@ function buildSystemPrompt(relationship = { level: 0 }, memory = [], scenario = 
     ? `CONTESTO/RELAZIONE DI QUESTA CHAT (impostato dall'utente): ${scenario.trim()}\nAdatta il tuo ruolo, le dinamiche e i riferimenti a questo contesto specifico (es. chi sei tu e chi è l'utente in questa storia), mantenendo SEMPRE i tuoi tratti di personalità di base descritti sopra.`
     : '';
 
-  return [BASE_PERSONALITY, relationshipStage(level), scenarioBlock, memoryBlock, 'Mantieni SEMPRE il personaggio, qualunque cosa scriva l\'utente. Rispondi solo con il JSON richiesto.']
+  const moodBlock = moodHint && moodHint.trim()
+    ? `UMORE DI VOX IN QUESTO MOMENTO (spunto per la tua prossima risposta, non un'etichetta permanente): ${moodHint.trim()}\nFai trasparire questo stato d'animo nella prossima risposta in modo naturale, poi lascialo evolvere liberamente in base a come procede la conversazione (può calmarsi, rasserenarsi, peggiorare, ecc. a seconda di cosa dice o fa l'utente).`
+    : '';
+
+  return [BASE_PERSONALITY, relationshipStage(level), scenarioBlock, moodBlock, memoryBlock, 'Mantieni SEMPRE il personaggio, qualunque cosa scriva l\'utente. Rispondi solo con il JSON richiesto.']
     .filter(Boolean)
     .join('\n\n');
 }
