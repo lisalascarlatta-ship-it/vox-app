@@ -278,7 +278,7 @@ async function requestVoxReply(retryCount = 0) {
       return;
     }
 
-  offlineChats.delete(chat.id);
+    offlineChats.delete(chat.id);
     if (activeChatId === chat.id) updateStatusLabel();
     updateMessageStatus(lastUserMessage(), 'read');
 
