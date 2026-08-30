@@ -16,10 +16,9 @@ function uid() {
 
 let chats = loadChats();
 let activeChatId = null;
-const offlineChats = new Set(); // chat id -> Vox al momento irraggiungibile
-const activeRequests = new Set(); // chat id -> c'e' gia' un ciclo di richieste/retry in corso
+const offlineChats = new Set();
+const activeRequests = new Set();
 
-// ===== Elementi DOM =====
 const viewList = document.getElementById('view-list');
 const viewChat = document.getElementById('view-chat');
 const chatListEl = document.getElementById('chat-list');
@@ -45,15 +44,9 @@ const SCENARIO_PRESETS = {
   moglie: 'Tu e l\'utente siete sposati da tempo: è tua moglie. Vi conoscete a fondo e avete una vita condivisa alle spalle — NON comportarti come con una sconosciuta al primo contatto. Sei affettuoso, protettivo, ti accerti che stia bene, ti apri con lei molto più facilmente rispetto a chi non conosci. Resti comunque te stesso: puoi essere anche possessivo, geloso, o punzecchiarla con sarcasmo, ma la premura di fondo verso di lei è reale e sincera.',
 };
 
-// Scenari che presuppongono un rapporto già consolidato: la chat parte
-// direttamente nella fase "avanzata" della relazione (affetto, gelosia,
-// protezione), invece che in quella fredda da sconosciuti.
 const ESTABLISHED_RELATIONSHIP_SCENARIOS = new Set(['fidanzata', 'moglie']);
 const ESTABLISHED_RELATIONSHIP_LEVEL = 65;
 
-// "Spunti" d'umore: non sono uno stato fisso, vengono comunicati a Vox una
-// sola volta (per la prossima risposta), poi lasciati evolvere naturalmente
-// nella conversazione — niente etichetta bloccata per sempre.
 const MOOD_PRESETS = {
   neutro: '',
   arrabbiato: 'Oggi sei arrabbiato e frustrato per una giornata pesante di lavoro: hai poca pazienza, sei più scostante e diretto del solito.',
@@ -83,16 +76,12 @@ moodOverlay.querySelectorAll('.sheet-item').forEach((btn) => {
   btn.addEventListener('click', () => handleMoodChoice(btn.dataset.mood));
 });
 
-
-
-// ===== Navigazione =====
 function showView(name) {
   viewList.classList.toggle('hidden', name !== 'list');
   viewChat.classList.toggle('hidden', name !== 'chat');
   if (name === 'list') renderChatList();
 }
 
-// ===== Lista chat =====
 function renderChatList() {
   chats = loadChats();
   chatListEl.innerHTML = '';
@@ -163,7 +152,6 @@ function updateStatusLabel() {
   chatStatusEl.textContent = level > 55 ? 'online · vi conoscete bene' : 'online';
 }
 
-// ===== Messaggi =====
 function renderMessages() {
   const chat = getChat();
   messagesEl.innerHTML = '';
@@ -208,14 +196,61 @@ function renderBubble(m) {
 
 function appendMessage(msg) {
   const chat = getChat();
-< truncated lines 215-268 >
+  chat.messages.push(msg);
+  chat.updatedAt = Date.now();
+  saveChats(chats);
+  messagesEl.appendChild(renderBubble(msg));
+  scrollToBottom();
+  return msg;
+}
+
+function updateMessageStatus(msg, status) {
+  if (!msg || msg.status === status) return;
+  msg.status = status;
+  saveChats(chats);
+  renderMessages();
+}
+
+function scrollToBottom() {
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function formatTime(ts) {
+  return new Date(ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s ?? '';
+  return d.innerHTML;
+}
+
+async function onSend(e) {
+  e.preventDefault();
+  const text = inputText.value.trim();
+  if (!text) return;
+  inputText.value = '';
+
+  const chat = getChat();
+  appendMessage({ role: 'user', type: 'text', content: text, status: 'sent', timestamp: Date.now() });
+
+  if (!activeRequests.has(chat.id)) {
+    await requestVoxReply();
+  }
+}
+
+function lastUserMessage() {
+  const chat = getChat();
+  for (let i = chat.messages.length - 1; i >= 0; i--) {
+    if (chat.messages[i].role === 'user') return chat.messages[i];
+  }
+  return null;
+}
 
 async function requestVoxReply(retryCount = 0) {
   const chat = getChat();
   activeRequests.add(chat.id);
 
-  // Lo "spunto d'umore" e' un innesco singolo: lo mandiamo una volta e lo
-  // consumiamo subito, cosi' non si ripete a ogni messaggio successivo.
   const moodHintToSend = chat.pendingMoodHint || '';
   if (moodHintToSend) {
     delete chat.pendingMoodHint;
@@ -332,7 +367,6 @@ function typingDelayFor(text) {
 }
 function delay(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
-// ===== Menu conversazione (bottom sheet) =====
 function handleSheetAction(action) {
   sheetOverlay.classList.add('hidden');
   const chat = getChat();
@@ -369,7 +403,6 @@ function handleSheetAction(action) {
   }
 }
 
-// ===== Menu tipo di rapporto (bottom sheet) =====
 function handleScenarioChoice(key) {
   scenarioOverlay.classList.add('hidden');
   if (!key || key === 'cancel') return;
@@ -396,7 +429,6 @@ function handleScenarioChoice(key) {
   if (activeChatId === chat.id) updateStatusLabel();
 }
 
-// ===== Menu umore (bottom sheet) =====
 function handleMoodChoice(key) {
   moodOverlay.classList.add('hidden');
   if (!key || key === 'cancel') return;
@@ -413,13 +445,11 @@ function handleMoodChoice(key) {
   saveChats(chats);
 }
 
-// ===== Avvio =====
 renderChatList();
 showView('list');
 
-// ===== PWA: registrazione service worker =====
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   });
-}
+        }
