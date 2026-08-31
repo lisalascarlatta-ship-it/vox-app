@@ -29,9 +29,12 @@ const composer = document.getElementById('composer');
 const inputText = document.getElementById('input-text');
 const chatTitleEl = document.getElementById('chat-title');
 const chatStatusEl = document.getElementById('chat-status');
+const chatMetaEl = document.getElementById('chat-meta');
 const sheetOverlay = document.getElementById('sheet-overlay');
 const scenarioOverlay = document.getElementById('scenario-overlay');
 const moodOverlay = document.getElementById('mood-overlay');
+const timeOverlay = document.getElementById('time-overlay');
+const timeInput = document.getElementById('time-input');
 
 const SCENARIO_PRESETS = {
   default: '',
@@ -58,13 +61,19 @@ const MOOD_PRESETS = {
   arrapato: 'In questo momento sei particolarmente su di giri: lascialo trasparire con doppi sensi e allusioni, restando comunque nel personaggio.',
 };
 
+const MONTHS_IT = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
+
 document.getElementById('btn-new-chat').addEventListener('click', createChat);
 document.getElementById('btn-back').addEventListener('click', () => showView('list'));
 document.getElementById('btn-menu').addEventListener('click', () => sheetOverlay.classList.remove('hidden'));
 sheetOverlay.addEventListener('click', (e) => { if (e.target === sheetOverlay) sheetOverlay.classList.add('hidden'); });
 scenarioOverlay.addEventListener('click', (e) => { if (e.target === scenarioOverlay) scenarioOverlay.classList.add('hidden'); });
 moodOverlay.addEventListener('click', (e) => { if (e.target === moodOverlay) moodOverlay.classList.add('hidden'); });
+timeOverlay.addEventListener('click', (e) => { if (e.target === timeOverlay) timeOverlay.classList.add('hidden'); });
 composer.addEventListener('submit', onSend);
+document.getElementById('btn-time').addEventListener('click', openTimeSheet);
+document.getElementById('btn-time-cancel').addEventListener('click', () => timeOverlay.classList.add('hidden'));
+document.getElementById('btn-time-apply').addEventListener('click', applyTimeChoice);
 
 sheetOverlay.querySelectorAll('.sheet-item').forEach((btn) => {
   btn.addEventListener('click', () => handleSheetAction(btn.dataset.action));
@@ -120,6 +129,8 @@ function createChat() {
     relationship: { level: 0 },
     memory: [],
     scenario: '',
+    currentMood: 'neutro',
+    virtualClockOffset: 0,
   };
   chats.push(chat);
   saveChats(chats);
@@ -140,22 +151,62 @@ function getChat() {
   return chats.find((c) => c.id === activeChatId);
 }
 
+function getVirtualNow(chat) {
+  return Date.now() + (chat.virtualClockOffset || 0);
+}
+
+function relationshipLabel(level) {
+  if (level < 20) return 'vi conoscete appena';
+  if (level < 55) return 'vi conoscete';
+  return 'vi conoscete bene';
+}
+
 function updateStatusLabel() {
   const chat = getChat();
   if (offlineChats.has(chat.id)) {
     chatStatusEl.textContent = 'offline';
     chatStatusEl.classList.add('dim');
+    chatMetaEl.textContent = '';
     return;
   }
   chatStatusEl.classList.remove('dim');
-  const level = chat.relationship.level;
-  chatStatusEl.textContent = level > 55 ? 'online · vi conoscete bene' : 'online';
+  chatStatusEl.textContent = 'online';
+
+  const parts = [];
+  const mood = (chat.currentMood || '').trim();
+  if (mood && mood.toLowerCase() !== 'neutro') parts.push(`umore: ${mood}`);
+  parts.push(relationshipLabel(chat.relationship.level));
+  chatMetaEl.textContent = parts.join(' · ');
+}
+
+function formatDayLabel(ts) {
+  const d = new Date(ts);
+  const now = new Date();
+  const label = `${d.getDate()} ${MONTHS_IT[d.getMonth()]}`;
+  return d.getFullYear() === now.getFullYear() ? label : `${label} ${d.getFullYear()}`;
+}
+
+function renderDayDivider(ts) {
+  const div = document.createElement('div');
+  div.className = 'day-divider';
+  const span = document.createElement('span');
+  span.textContent = formatDayLabel(ts);
+  div.appendChild(span);
+  return div;
 }
 
 function renderMessages() {
   const chat = getChat();
   messagesEl.innerHTML = '';
-  chat.messages.forEach((m) => messagesEl.appendChild(renderBubble(m)));
+  let lastDateKey = null;
+  chat.messages.forEach((m) => {
+    const dateKey = new Date(m.timestamp).toDateString();
+    if (dateKey !== lastDateKey) {
+      messagesEl.appendChild(renderDayDivider(m.timestamp));
+      lastDateKey = dateKey;
+    }
+    messagesEl.appendChild(renderBubble(m));
+  });
   scrollToBottom();
 }
 
@@ -183,11 +234,18 @@ function renderBubble(m) {
   }
   col.appendChild(bubble);
 
+  const showTime = m.type !== 'wait';
   if (m.role === 'user') {
     const status = document.createElement('div');
     status.className = `msg-status ${m.status || 'sent'}`;
-    status.textContent = m.status === 'sent' || !m.status ? '✓' : '✓✓';
+    const ticks = m.status === 'sent' || !m.status ? '✓' : '✓✓';
+    status.textContent = showTime ? `${formatTime(m.timestamp)}  ${ticks}` : ticks;
     col.appendChild(status);
+  } else if (showTime) {
+    const timeLabel = document.createElement('div');
+    timeLabel.className = 'msg-time-label';
+    timeLabel.textContent = formatTime(m.timestamp);
+    col.appendChild(timeLabel);
   }
 
   wrap.appendChild(col);
@@ -196,9 +254,17 @@ function renderBubble(m) {
 
 function appendMessage(msg) {
   const chat = getChat();
+  const prevLast = chat.messages[chat.messages.length - 1];
   chat.messages.push(msg);
   chat.updatedAt = Date.now();
   saveChats(chats);
+
+  const prevDateKey = prevLast ? new Date(prevLast.timestamp).toDateString() : null;
+  const thisDateKey = new Date(msg.timestamp).toDateString();
+  if (thisDateKey !== prevDateKey) {
+    messagesEl.appendChild(renderDayDivider(msg.timestamp));
+  }
+
   messagesEl.appendChild(renderBubble(msg));
   scrollToBottom();
   return msg;
@@ -232,7 +298,7 @@ async function onSend(e) {
   inputText.value = '';
 
   const chat = getChat();
-  appendMessage({ role: 'user', type: 'text', content: text, status: 'sent', timestamp: Date.now() });
+  appendMessage({ role: 'user', type: 'text', content: text, status: 'sent', timestamp: getVirtualNow(chat) });
 
   if (!activeRequests.has(chat.id)) {
     await requestVoxReply();
@@ -275,6 +341,7 @@ async function requestVoxReply(retryCount = 0) {
           memory: chat.memory,
           scenario: chat.scenario || '',
           moodHint: moodHintToSend,
+          currentMood: chat.currentMood || 'neutro',
         }),
       });
       data = await res.json();
@@ -299,7 +366,7 @@ async function requestVoxReply(retryCount = 0) {
           role: 'vox',
           type: 'wait',
           content: 'Vox non risponde al momento. Prova a riscrivergli tra un po\'.',
-          timestamp: Date.now(),
+          timestamp: getVirtualNow(chat),
         });
       }
 
@@ -314,7 +381,6 @@ async function requestVoxReply(retryCount = 0) {
     }
 
     offlineChats.delete(chat.id);
-    if (activeChatId === chat.id) updateStatusLabel();
     updateMessageStatus(lastUserMessage(), 'read');
 
     chat.relationship.level = Math.max(0, Math.min(100, chat.relationship.level + (data.relationship_delta || 0)));
@@ -322,14 +388,18 @@ async function requestVoxReply(retryCount = 0) {
       chat.memory.push(...data.memory_add.filter(Boolean));
       chat.memory = chat.memory.slice(-30);
     }
+    if (typeof data.mood === 'string' && data.mood.trim()) {
+      chat.currentMood = data.mood.trim();
+    }
     saveChats(chats);
+    if (activeChatId === chat.id) updateStatusLabel();
 
     for (const bubble of data.bubbles) {
       await delay(typingDelayFor(bubble.content));
       if (bubble.type === 'image') {
         await handleImageBubble(bubble);
       } else {
-        appendMessage({ role: 'vox', type: 'text', content: bubble.content, timestamp: Date.now() });
+        appendMessage({ role: 'vox', type: 'text', content: bubble.content, timestamp: getVirtualNow(chat) });
       }
     }
 
@@ -340,7 +410,8 @@ async function requestVoxReply(retryCount = 0) {
 }
 
 async function handleImageBubble(bubble) {
-  appendMessage({ role: 'vox', type: 'image', content: bubble.content, caption_it: bubble.caption_it, url: null, timestamp: Date.now() });
+  const chat = getChat();
+  appendMessage({ role: 'vox', type: 'image', content: bubble.content, caption_it: bubble.caption_it, url: null, timestamp: getVirtualNow(chat) });
   try {
     const res = await fetch('/api/image', {
       method: 'POST',
@@ -349,8 +420,8 @@ async function handleImageBubble(bubble) {
     });
     const data = await res.json();
     if (data.url) {
-      const chat = getChat();
-      const last = chat.messages[chat.messages.length - 1];
+      const c = getChat();
+      const last = c.messages[c.messages.length - 1];
       last.url = data.url;
       saveChats(chats);
       renderMessages();
@@ -373,7 +444,7 @@ function handleSheetAction(action) {
   if (!chat) return;
 
   if (action === 'scenario') {
-    scenarioOverlay.classList.remove('hidden');
+    openScenarioSheet();
   } else if (action === 'mood') {
     moodOverlay.classList.remove('hidden');
   } else if (action === 'rename') {
@@ -401,6 +472,21 @@ function handleSheetAction(action) {
       showView('list');
     }
   }
+}
+
+function openScenarioSheet() {
+  const chat = getChat();
+  scenarioOverlay.querySelectorAll('.sheet-item[data-scenario]').forEach((btn) => {
+    const key = btn.dataset.scenario;
+    if (key === 'cancel' || key === 'custom') {
+      btn.classList.remove('active');
+      return;
+    }
+    const preset = SCENARIO_PRESETS[key] ?? '';
+    const isActive = key === 'default' ? !chat.scenario : chat.scenario === preset;
+    btn.classList.toggle('active', isActive);
+  });
+  scenarioOverlay.classList.remove('hidden');
 }
 
 function handleScenarioChoice(key) {
@@ -445,6 +531,42 @@ function handleMoodChoice(key) {
   saveChats(chats);
 }
 
+function openTimeSheet() {
+  const chat = getChat();
+  if (!chat) return;
+  const now = new Date(getVirtualNow(chat));
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  timeInput.value = `${hh}:${mm}`;
+  timeOverlay.classList.remove('hidden');
+}
+
+function applyTimeChoice() {
+  const chat = getChat();
+  if (!chat) { timeOverlay.classList.add('hidden'); return; }
+
+  const val = timeInput.value;
+  if (!val) {
+    timeOverlay.classList.add('hidden');
+    return;
+  }
+  const [h, m] = val.split(':').map(Number);
+
+  const currentVirtual = new Date(getVirtualNow(chat));
+  const currentMinutes = currentVirtual.getHours() * 60 + currentVirtual.getMinutes();
+  const chosenMinutes = h * 60 + m;
+
+  const newVirtual = new Date(currentVirtual);
+  newVirtual.setHours(h, m, 0, 0);
+  if (chosenMinutes <= currentMinutes) {
+    newVirtual.setDate(newVirtual.getDate() + 1);
+  }
+
+  chat.virtualClockOffset = newVirtual.getTime() - Date.now();
+  saveChats(chats);
+  timeOverlay.classList.add('hidden');
+}
+
 renderChatList();
 showView('list');
 
@@ -452,4 +574,4 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   });
-        }
+}
