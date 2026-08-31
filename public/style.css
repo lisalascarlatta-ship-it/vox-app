@@ -127,8 +127,16 @@ html, body {
 }
 .chat-title-block { flex: 1; min-width: 0; }
 .chat-title { font-weight: 600; font-size: 15.5px; }
-.chat-status { font-size: 12px; color: var(--accent); }
+.chat-status { font-size: 12px; color: var(--accent); line-height: 1.3; }
 .chat-status.dim { color: var(--text-dim); }
+.chat-meta {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .messages {
   flex: 1;
@@ -137,6 +145,15 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 3px;
+}
+
+.day-divider { display: flex; justify-content: center; margin: 14px 0 8px; }
+.day-divider span {
+  background: var(--surface);
+  color: var(--text-dim);
+  font-size: 11.5px;
+  padding: 4px 14px;
+  border-radius: 999px;
 }
 
 .bubble-row { display: flex; margin: 3px 0; max-width: 100%; }
@@ -174,9 +191,14 @@ html, body {
   font-size: 10.5px;
   margin: 2px 4px 0;
   color: var(--text-dim);
-  letter-spacing: -1px;
+  letter-spacing: -0.5px;
 }
-.msg-status.read { color: var(--accent); letter-spacing: -1px; }
+.msg-status.read { color: var(--accent); }
+.msg-time-label {
+  font-size: 10.5px;
+  margin: 2px 4px 0;
+  color: var(--text-dim);
+}
 
 .bubble img { max-width: 100%; border-radius: 12px; display: block; }
 .bubble.image-placeholder {
@@ -184,10 +206,6 @@ html, body {
   color: var(--text-dim); font-style: italic; font-size: 13.5px;
   border: 1px dashed var(--surface-2);
 }
-
-.msg-time { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text-dim); margin: 2px 6px 6px; }
-.time-row { display: flex; }
-.time-row.user { justify-content: flex-end; }
 
 @keyframes pop-in { from { opacity: 0; transform: translateY(4px);} to { opacity: 1; transform: translateY(0);} }
 
@@ -242,6 +260,8 @@ html, body {
   border-radius: 20px 20px 0 0;
   padding: 8px 10px calc(10px + env(safe-area-inset-bottom));
   display: flex; flex-direction: column;
+  max-height: 85vh;
+  overflow-y: auto;
 }
 .sheet-item {
   background: none; border: none; color: var(--text);
@@ -250,6 +270,8 @@ html, body {
 }
 .sheet-item:hover { background: var(--surface-2); }
 .sheet-item.danger { color: var(--danger); }
+.sheet-item.active { color: var(--accent); font-weight: 600; }
+.sheet-item.active::before { content: '✓  '; }
 .sheet-title {
   padding: 10px 12px 4px;
   font-size: 12.5px;
@@ -257,7 +279,32 @@ html, body {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+.sheet-sub {
+  padding: 0 12px 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+.time-picker-row { padding: 8px 12px 4px; }
+#time-input {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--surface-2);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 12px;
+  font-size: 16px;
+  color-scheme: dark;
+}
+.time-picker-actions { display: flex; gap: 8px; padding: 12px 12px 4px; }
+.btn-secondary, .btn-primary {
+  flex: 1; padding: 12px; border-radius: 12px; border: none;
+  font-size: 15px; cursor: pointer;
+}
+.btn-secondary { background: var(--surface-2); color: var(--text); }
+.btn-primary { background: var(--accent); color: #fff; font-weight: 600; }
 
 @media (min-width: 640px) {
   #app { border-left: 1px solid var(--surface); border-right: 1px solid var(--surface); }
-}
+    }
