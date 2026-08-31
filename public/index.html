@@ -44,6 +44,7 @@
       <div class="chat-title-block">
         <div id="chat-title" class="chat-title">Vox</div>
         <div id="chat-status" class="chat-status">in linea</div>
+        <div id="chat-meta" class="chat-meta"></div>
       </div>
       <button id="btn-menu" class="btn-icon" aria-label="Impostazioni conversazione">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="5" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="19" r="1.6" fill="currentColor"/></svg>
@@ -58,8 +59,8 @@
     </div>
 
     <form id="composer" class="composer">
-      <button type="button" id="btn-attach" class="btn-icon" title="Allega immagine" aria-label="Allega immagine">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" stroke-width="2"/><circle cx="8.5" cy="10" r="1.5" fill="currentColor"/><path d="M21 16l-5-5-4 4-2-2-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <button type="button" id="btn-time" class="btn-icon" title="Imposta l'ora della conversazione" aria-label="Imposta l'ora della conversazione">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3.5 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
       <input id="input-text" type="text" placeholder="Scrivi un messaggio" autocomplete="off" />
       <button type="submit" id="btn-send" class="btn-send" aria-label="Invia">
@@ -73,8 +74,8 @@
 <!-- ===== MENU CONVERSAZIONE (bottom sheet) ===== -->
 <div id="sheet-overlay" class="sheet-overlay hidden">
   <div class="sheet">
-    <button class="sheet-item" data-action="scenario">Imposta il tipo di rapporto</button>
-    <button class="sheet-item" data-action="mood">Imposta l'umore di Vox</button>
+    <button class="sheet-item" data-action="scenario">Rapporto con Vox</button>
+    <button class="sheet-item" data-action="mood">Suggerisci un umore a Vox</button>
     <button class="sheet-item" data-action="rename">Rinomina conversazione</button>
     <button class="sheet-item" data-action="duplicate">Duplica conversazione</button>
     <button class="sheet-item" data-action="export">Esporta conversazione (.json)</button>
@@ -103,7 +104,8 @@
 <!-- ===== MENU UMORE (bottom sheet) ===== -->
 <div id="mood-overlay" class="sheet-overlay hidden">
   <div class="sheet">
-    <div class="sheet-title">Come si sente Vox in questo momento?</div>
+    <div class="sheet-title">Che umore vuoi suggerire a Vox?</div>
+    <div class="sheet-sub">Vox aggiorna il suo umore da solo in base alla conversazione: questo è solo uno spunto per il prossimo messaggio, non un'etichetta fissa.</div>
     <button class="sheet-item" data-mood="neutro">Neutro</button>
     <button class="sheet-item" data-mood="arrabbiato">Arrabbiato/frustrato per il lavoro</button>
     <button class="sheet-item" data-mood="pensieroso">Ti stava pensando</button>
@@ -113,6 +115,21 @@
     <button class="sheet-item" data-mood="stanco">Stanco</button>
     <button class="sheet-item" data-mood="arrapato">Su di giri…</button>
     <button class="sheet-item" data-mood="cancel">Annulla</button>
+  </div>
+</div>
+
+<!-- ===== MENU ORARIO (bottom sheet) ===== -->
+<div id="time-overlay" class="sheet-overlay hidden">
+  <div class="sheet">
+    <div class="sheet-title">A che ora scrivi questo messaggio?</div>
+    <div class="sheet-sub">Utile per rendere la chat più realistica, es. passare dalla sera alla mattina dopo. Se scegli un'ora precedente a quella attuale, l'app capisce che è il giorno successivo.</div>
+    <div class="time-picker-row">
+      <input type="time" id="time-input" />
+    </div>
+    <div class="time-picker-actions">
+      <button type="button" class="btn-secondary" id="btn-time-cancel">Annulla</button>
+      <button type="button" class="btn-primary" id="btn-time-apply">Applica</button>
+    </div>
   </div>
 </div>
 
