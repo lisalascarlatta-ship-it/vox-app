@@ -31,6 +31,7 @@ function safeParseModelJson(text) {
       bubbles: salvaged.length ? salvaged : [{ type: 'text', content: 'Mh, dammi un secondo.' }],
       relationship_delta: 0,
       memory_add: [],
+      mood: '',
     };
   }
 }
@@ -43,8 +44,16 @@ app.post('/api/chat', async (req, res) => {
       });
     }
 
-    const { messages = [], relationship = { level: 0 }, memory = [], scenario = '', moodHint = '' } = req.body;
-    const system = buildSystemPrompt(relationship, memory, scenario, moodHint);
+    const {
+      messages = [],
+      relationship = { level: 0 },
+      memory = [],
+      scenario = '',
+      moodHint = '',
+      currentMood = '',
+    } = req.body;
+
+    const system = buildSystemPrompt(relationship, memory, scenario, moodHint, currentMood);
 
     const trimmed = messages.slice(-24).map((m) => ({
       role: m.role === 'assistant' || m.role === 'vox' ? 'assistant' : 'user',
@@ -91,6 +100,9 @@ app.post('/api/chat', async (req, res) => {
     }
     if (typeof parsed.relationship_delta !== 'number') parsed.relationship_delta = 0;
     if (!Array.isArray(parsed.memory_add)) parsed.memory_add = [];
+    if (typeof parsed.mood !== 'string' || !parsed.mood.trim()) {
+      parsed.mood = currentMood || 'neutro';
+    }
 
     res.json(parsed);
   } catch (err) {
